@@ -1,5 +1,7 @@
 import os
 import math
+import csv
+from pathlib import Path
 
 import imageio.v2 as imageio
 import matplotlib.pyplot as plt
@@ -258,34 +260,37 @@ def main():
     n_samples = 128
 
     # Training settings
-    n_iters = 20000
-    batch_size = 2048
+    n_iters = 200000
+    batch_size = 4096
 
+    # ── logging setup ───────────────────────────────────────────
+    log_path = Path("outputs/training_log.csv")
+    log_path.parent.mkdir(exist_ok=True)
+
+    history = {"step": [], "loss": [], "psnr": [], "acc_mean": [], "acc_max": []}
+
+    with open(log_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "loss", "psnr", "acc_mean", "acc_max"])
+
+    # ── training loop ────────────────────────────────────────────
     for step in range(n_iters):
         img_idx = torch.randint(0, len(train_ds), (1,)).item()
         sample = train_ds[img_idx]
 
         image = sample["image"].to(device)
-        pose = sample["pose"].to(device)
+        pose  = sample["pose"].to(device)
 
         i = torch.randint(0, W, (batch_size,), device=device)
         j = torch.randint(0, H, (batch_size,), device=device)
 
         target_rgb = image[j, i]
-
         rays_o, rays_d = get_rays_from_pixels(i, j, H, W, focal, pose)
 
         pred_rgb, depth_map, acc_map = render_rays(
-            model=model,
-            pos_encoder=pos_encoder,
-            dir_encoder=dir_encoder,
-            rays_o=rays_o,
-            rays_d=rays_d,
-            near=near,
-            far=far,
-            n_samples=n_samples,
-            perturb=True,
-            white_background=True,
+            model=model, pos_encoder=pos_encoder, dir_encoder=dir_encoder,
+            rays_o=rays_o, rays_d=rays_d, near=near, far=far,
+            n_samples=n_samples, perturb=True, white_background=True,
         )
 
         loss = F.mse_loss(pred_rgb, target_rgb)
@@ -297,23 +302,54 @@ def main():
         scheduler.step()
 
         if step % 100 == 0:
+            loss_val    = loss.item()
+            psnr_val    = psnr.item()
+            acc_mean    = acc_map.mean().item()
+            acc_max     = acc_map.max().item()
+
             print(
-                f"Step {step:5d} | "
-                f"Loss: {loss.item():.6f} | "
-                f"PSNR: {psnr.item():.2f} | "
-                f"acc mean: {acc_map.mean().item():.6f} | "
-                f"acc max: {acc_map.max().item():.6f}"
+                f"Step {step:6d} | Loss: {loss_val:.6f} | "
+                f"PSNR: {psnr_val:.2f} | acc mean: {acc_mean:.4f} | acc max: {acc_max:.4f}"
             )
+
+            # ── append to CSV ────────────────────────────────────
+            with open(log_path, "a", newline="") as f:
+                csv.writer(f).writerow([step, loss_val, psnr_val, acc_mean, acc_max])
+
+            # ── keep in-memory history ───────────────────────────
+            history["step"].append(step)
+            history["loss"].append(loss_val)
+            history["psnr"].append(psnr_val)
+            history["acc_mean"].append(acc_mean)
+            history["acc_max"].append(acc_max)
 
         if step % 1000 == 0 or step == n_iters - 1:
             save_checkpoint(
                 path=f"checkpoints/nerf_lego_step_{step}.pt",
-                model=model,
-                optimizer=optimizer,
-                step=step,
-                loss=loss.item(),
-                psnr=psnr.item(),
+                model=model, optimizer=optimizer,
+                step=step, loss=loss.item(), psnr=psnr.item(),
             )
+
+    # ── plot training curves ─────────────────────────────────────
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+    axes[0].plot(history["step"], history["loss"], color="tab:orange", linewidth=1.5)
+    axes[0].set_yscale("log")
+    axes[0].set_xlabel("Step")
+    axes[0].set_ylabel("MSE Loss (log scale)")
+    axes[0].set_title("Training loss")
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].plot(history["step"], history["psnr"], color="tab:green", linewidth=1.5)
+    axes[1].set_xlabel("Step")
+    axes[1].set_ylabel("PSNR (dB)")
+    axes[1].set_title("Training PSNR")
+    axes[1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("outputs/training_curves.png", dpi=150, bbox_inches="tight")
+    plt.show()
+    print("Saved training curves → outputs/training_curves.png")
 
     # Render one held-out test view
     test_sample = test_ds[0]
