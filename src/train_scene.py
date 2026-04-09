@@ -261,7 +261,7 @@ def main():
     H, W, focal = train_ds[0]["H"], train_ds[0]["W"], train_ds[0]["focal"]
 
     # ── encoders ─────────────────────────────────────────────────
-    pos_encoder = PositionalEncoding(input_dims=3, num_freqs=12).to(device)
+    pos_encoder = PositionalEncoding(input_dims=3, num_freqs=10).to(device)
     dir_encoder = PositionalEncoding(input_dims=3, num_freqs=4).to(device)
 
     # ── models ───────────────────────────────────────────────────
@@ -288,8 +288,8 @@ def main():
     n_fine   = 128
 
     # ── training settings ────────────────────────────────────────
-    n_iters    = 10000
-    batch_size = 4096
+    n_iters    = 100000
+    batch_size = 2048
 
     # ── logging setup ────────────────────────────────────────────
     log_path = Path("outputs/training_log.csv")

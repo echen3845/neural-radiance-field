@@ -28,7 +28,7 @@ model = NeRF(
 ).to(device)
 
 checkpoint = torch.load(
-    "checkpoints/nerf_lego_10k Iterations best.pt",
+    "checkpoints/nerf_lego_step_Coarse + Fine 100k 64 128 2048 no scheduler.pt",
     map_location=device,
     weights_only=False
 )
@@ -56,4 +56,4 @@ orbit_frames = render_orbit_frames(
     phi_deg=-30.0,
 )
 
-save_gif(orbit_frames, "outputs/lego 10k 128 4096.gif", fps=20)
+save_gif(orbit_frames, "outputs/lego.gif", fps=20)
